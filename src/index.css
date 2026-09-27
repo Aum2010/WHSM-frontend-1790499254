@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body { @apply bg-slate-950 text-slate-100 font-sans; }
+  button { @apply min-h-[44px]; }
+  input, select { @apply min-h-[44px] text-base; }
+}
+
+@layer components {
+  .card        { @apply bg-slate-900 border border-slate-800 rounded-2xl p-6; }
+  .input       { @apply w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sky-500 placeholder:text-slate-500 text-sm; }
+  .btn-primary { @apply bg-sky-600 hover:bg-sky-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition; }
+  .btn-danger  { @apply bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition; }
+  .btn-ghost   { @apply bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-sm font-medium transition; }
+  .badge-sky   { @apply px-2.5 py-1 bg-sky-500/10 text-sky-400 border border-sky-500/20 rounded-lg text-xs font-mono; }
+  .badge-green { @apply px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-mono; }
+  .badge-red   { @apply px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-mono; }
+  .badge-yellow{ @apply px-2.5 py-1 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-lg text-xs font-mono; }
+}
