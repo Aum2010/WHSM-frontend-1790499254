@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useAuthStore } from '../../stores/auth.store'
+// import { useAuthStore } from '../../stores/auth.store'
 import { api } from '../../lib/api'
 
 interface RecipeItem {
@@ -257,7 +257,7 @@ function StockCheckPanel({ check }: { check: StockCheck }) {
 // ── Main Page ─────────────────────────────────────────
 export default function RecipePage() {
   const qc = useQueryClient()
-  const { user } = useAuthStore()
+  // const { user } = useAuthStore()
   const [showCreate, setShowCreate]   = useState(false)
   const [editing, setEditing]         = useState<Recipe | null>(null)
   const [selected, setSelected]       = useState<Recipe | null>(null)
