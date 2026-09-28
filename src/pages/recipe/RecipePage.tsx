@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-// import { useAuthStore } from '../../stores/auth.store'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuthStore } from '../../stores/auth.store'
 import { api } from '../../lib/api'
 
 interface RecipeItem {
@@ -37,7 +37,7 @@ interface StockCheck {
     inStock: number
     sufficient: boolean
     shortage: number
-    lots: { lotNo: string; remainingQty: number; location: string }[]
+    lots: { rmNo: string; remainingQty: number; location: string }[]
   }[]
 }
 
@@ -62,30 +62,33 @@ function RecipeModal({ recipe, onClose, onSuccess }: {
     })) ?? [{ materialCode: '', materialName: '', quantity: '', unit: 'kg', note: '' }]
   )
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const addItem = () =>
-    setItems(i => [...i, { materialCode: '', materialName: '', quantity: '', unit: 'kg', note: '' }])
-
-  const removeItem = (idx: number) =>
-    setItems(i => i.filter((_, j) => j !== idx))
-
+  const addItem    = () => setItems(i => [...i, { materialCode: '', materialName: '', quantity: '', unit: 'kg', note: '' }])
+  const removeItem = (idx: number) => setItems(i => i.filter((_, j) => j !== idx))
   const updateItem = (idx: number, key: string, val: string) =>
     setItems(i => i.map((item, j) => j === idx ? { ...item, [key]: val } : item))
 
-  const mutation = useMutation({
-    mutationFn: () => {
+  const handleSave = async () => {
+    setSaving(true)
+    setError('')
+    try {
       const payload = {
         ...form,
         yieldQty: Number(form.yieldQty),
         items: items.map(i => ({ ...i, quantity: Number(i.quantity) })),
       }
-      return recipe
-        ? api.put(`/api/v1/recipe/${recipe.productCode}`, payload)
-        : api.post('/api/v1/recipe', payload)
-    },
-    onSuccess: () => { onSuccess(); onClose() },
-    onError: (err: any) => setError(err.response?.data?.message || 'เกิดข้อผิดพลาด'),
-  })
+      recipe
+        ? await api.put(`/api/v1/recipe/${recipe.productCode}`, payload)
+        : await api.post('/api/v1/recipe', payload)
+      onSuccess()
+      onClose()
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'เกิดข้อผิดพลาด')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -132,7 +135,6 @@ function RecipeModal({ recipe, onClose, onSuccess }: {
           </div>
         </div>
 
-        {/* Recipe Items */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-slate-300">
@@ -148,9 +150,7 @@ function RecipeModal({ recipe, onClose, onSuccess }: {
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-400">ส่วนประกอบที่ {idx + 1}</span>
                 {items.length > 1 && (
-                  <button onClick={() => removeItem(idx)} className="text-xs text-red-400 hover:text-red-300">
-                    ลบ
-                  </button>
+                  <button onClick={() => removeItem(idx)} className="text-xs text-red-400 hover:text-red-300">ลบ</button>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -179,8 +179,8 @@ function RecipeModal({ recipe, onClose, onSuccess }: {
 
         <div className="flex gap-3 pt-2">
           <button onClick={onClose} className="btn-ghost flex-1">ยกเลิก</button>
-          <button onClick={() => mutation.mutate()} disabled={mutation.isPending} className="btn-primary flex-1">
-            {mutation.isPending ? 'กำลังบันทึก...' : recipe ? 'บันทึกการแก้ไข' : 'สร้างสูตร'}
+          <button onClick={handleSave} disabled={saving} className="btn-primary flex-1">
+            {saving ? 'กำลังบันทึก...' : recipe ? 'บันทึกการแก้ไข' : 'สร้างสูตร'}
           </button>
         </div>
       </div>
@@ -197,35 +197,26 @@ function StockCheckPanel({ check }: { check: StockCheck }) {
           ? 'bg-emerald-500/10 border-emerald-500/30'
           : 'bg-red-500/10 border-red-500/30'
       }`}>
-        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${
-          check.allSufficient ? 'bg-emerald-500' : 'bg-red-500'
-        }`} />
+        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${check.allSufficient ? 'bg-emerald-500' : 'bg-red-500'}`} />
         <div>
           <p className={`text-sm font-bold ${check.allSufficient ? 'text-emerald-400' : 'text-red-400'}`}>
             {check.allSufficient ? '✓ Stock พร้อมผลิต' : '✗ Stock ไม่เพียงพอ'}
           </p>
-          <p className="text-xs text-slate-400">
-            Yield: {check.yieldQty} {check.yieldUnit} / batch
-          </p>
+          <p className="text-xs text-slate-400">Yield: {check.yieldQty} {check.yieldUnit} / batch</p>
         </div>
       </div>
 
       {check.items.map(item => (
-        <div key={item.materialCode}
-          className={`rounded-xl border p-3 space-y-2 ${
-            item.sufficient
-              ? 'border-slate-700 bg-slate-800/50'
-              : 'border-red-500/30 bg-red-500/5'
-          }`}>
+        <div key={item.materialCode} className={`rounded-xl border p-3 space-y-2 ${
+          item.sufficient ? 'border-slate-700 bg-slate-800/50' : 'border-red-500/30 bg-red-500/5'
+        }`}>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-white">{item.materialName}</p>
               <p className="text-xs text-slate-500">{item.materialCode}</p>
             </div>
             <div className="text-right">
-              <p className={`text-sm font-bold font-mono ${
-                item.sufficient ? 'text-emerald-400' : 'text-red-400'
-              }`}>
+              <p className={`text-sm font-bold font-mono ${item.sufficient ? 'text-emerald-400' : 'text-red-400'}`}>
                 {item.inStock.toFixed(3)} / {item.required.toFixed(3)} {item.unit}
               </p>
               <p className="text-xs text-slate-500">มี / ต้องการ</p>
@@ -236,12 +227,11 @@ function StockCheckPanel({ check }: { check: StockCheck }) {
             <p className="text-xs text-red-400">ขาด {item.shortage.toFixed(3)} {item.unit}</p>
           )}
 
-          {/* Lots available */}
           {item.lots.length > 0 && (
             <div className="space-y-1">
               {item.lots.map(lot => (
-                <div key={lot.lotNo} className="flex justify-between text-xs text-slate-400 bg-slate-800 rounded-lg px-3 py-1.5">
-                  <span className="font-mono text-sky-400">{lot.lotNo}</span>
+                <div key={lot.rmNo} className="flex justify-between text-xs text-slate-400 bg-slate-800 rounded-lg px-3 py-1.5">
+                  <span className="font-mono text-sky-400">{lot.rmNo}</span>
                   <span>{lot.remainingQty.toFixed(3)} {item.unit}</span>
                   <span className="text-slate-500">{lot.location}</span>
                 </div>
@@ -257,12 +247,14 @@ function StockCheckPanel({ check }: { check: StockCheck }) {
 // ── Main Page ─────────────────────────────────────────
 export default function RecipePage() {
   const qc = useQueryClient()
-  // const { user } = useAuthStore()
-  const [showCreate, setShowCreate]   = useState(false)
-  const [editing, setEditing]         = useState<Recipe | null>(null)
-  const [selected, setSelected]       = useState<Recipe | null>(null)
-  const [stockCheck, setStockCheck]   = useState<StockCheck | null>(null)
-  const [checking, setChecking]       = useState(false)
+  const { user } = useAuthStore()
+  const [showCreate, setShowCreate] = useState(false)
+  const [editing, setEditing]       = useState<Recipe | null>(null)
+  const [selected, setSelected]     = useState<Recipe | null>(null)
+  const [stockCheck, setStockCheck] = useState<StockCheck | null>(null)
+  const [checking, setChecking]     = useState(false)
+  const [creatingBatch, setCreatingBatch] = useState(false)
+  const [batchResult, setBatchResult]     = useState<{ lotNo: string } | null>(null)
 
   const { data: recipes = [], isLoading } = useQuery<Recipe[]>({
     queryKey: ['recipes'],
@@ -275,6 +267,7 @@ export default function RecipePage() {
     setSelected(recipe)
     setChecking(true)
     setStockCheck(null)
+    setBatchResult(null)
     try {
       const res = await api.get(`/api/v1/recipe/${recipe.productCode}/check-stock`)
       setStockCheck(res.data)
@@ -285,17 +278,40 @@ export default function RecipePage() {
     }
   }
 
+  const handleCreateBatch = async () => {
+    if (!selected) return
+    setCreatingBatch(true)
+    try {
+      // 1. สร้าง Batch
+      const batchRes = await api.post('/api/v1/production/batches', {
+        productCode: selected.productCode,
+        productName: selected.productName,
+        recipeId:    selected.id,
+        startedBy:   user?.id ?? '',
+      })
+      const { lotNo } = batchRes.data
+
+      // 2. เบิกวัตถุดิบ FEFO อัตโนมัติ
+      await api.post(`/api/v1/production/batches/${lotNo}/pick-from-recipe`, {
+        performedBy: user?.id ?? '',
+      })
+
+      setBatchResult({ lotNo })
+    } catch (e: any) {
+      console.error(e)
+    } finally {
+      setCreatingBatch(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white">สูตรการผลิต (Recipe)</h2>
           <p className="text-sm text-slate-400 mt-1">{recipes.length} สูตร</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary text-sm">
-          + สร้างสูตรใหม่
-        </button>
+        <button onClick={() => setShowCreate(true)} className="btn-primary text-sm">+ สร้างสูตรใหม่</button>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -306,18 +322,14 @@ export default function RecipePage() {
           ) : recipes.length === 0 ? (
             <div className="card text-center py-12 text-slate-500">
               <p>ยังไม่มีสูตรการผลิต</p>
-              <button onClick={() => setShowCreate(true)} className="btn-primary text-sm mt-4">
-                + สร้างสูตรแรก
-              </button>
+              <button onClick={() => setShowCreate(true)} className="btn-primary text-sm mt-4">+ สร้างสูตรแรก</button>
             </div>
           ) : recipes.map(recipe => (
             <div
               key={recipe.id}
               onClick={() => handleCheckStock(recipe)}
               className={`card cursor-pointer transition-colors space-y-3 ${
-                selected?.id === recipe.id
-                  ? 'border-sky-500/50 bg-sky-500/5'
-                  : 'hover:border-slate-600'
+                selected?.id === recipe.id ? 'border-sky-500/50 bg-sky-500/5' : 'hover:border-slate-600'
               }`}
             >
               <div className="flex items-start justify-between">
@@ -341,14 +353,11 @@ export default function RecipePage() {
                 </div>
               </div>
 
-              {/* Items summary */}
               <div className="space-y-1">
                 {recipe.items.map(item => (
                   <div key={item.id} className="flex justify-between text-xs">
                     <span className="text-slate-300">{item.materialName}</span>
-                    <span className="font-mono text-slate-400">
-                      {Number(item.quantity).toFixed(3)} {item.unit}
-                    </span>
+                    <span className="font-mono text-slate-400">{Number(item.quantity).toFixed(3)} {item.unit}</span>
                   </div>
                 ))}
               </div>
@@ -361,17 +370,43 @@ export default function RecipePage() {
         {/* Stock Check Panel */}
         <div>
           {checking ? (
-            <div className="card text-center py-12 text-slate-500 animate-pulse">
-              กำลังเช็ค Stock...
-            </div>
+            <div className="card text-center py-12 text-slate-500 animate-pulse">กำลังเช็ค Stock...</div>
           ) : stockCheck ? (
             <div className="card space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-300">
-                  เช็ค Stock — {stockCheck.productName}
-                </h3>
-              </div>
+              <h3 className="text-sm font-bold text-slate-300">
+                เช็ค Stock — {stockCheck.productName}
+              </h3>
+
               <StockCheckPanel check={stockCheck} />
+
+              {/* Create Batch Button */}
+              <div className="pt-2 border-t border-slate-700">
+                {batchResult ? (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 space-y-1">
+                    <p className="text-emerald-400 text-sm font-medium">✓ สร้าง Batch + เบิกวัตถุดิบสำเร็จ</p>
+                    <p className="font-mono text-sky-400 text-xs">{batchResult.lotNo}</p>
+                    <p className="text-xs text-slate-400">ไปต่อที่หน้า Production เพื่อบันทึก Stage</p>
+                    <button
+                      onClick={() => { setBatchResult(null); setStockCheck(null); setSelected(null) }}
+                      className="text-xs text-slate-400 hover:text-white mt-1"
+                    >
+                      เริ่มใหม่
+                    </button>
+                  </div>
+                ) : stockCheck.allSufficient ? (
+                  <button
+                    onClick={handleCreateBatch}
+                    disabled={creatingBatch}
+                    className="w-full py-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 text-sm font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                  >
+                    {creatingBatch ? '⏳ กำลังสร้าง Batch...' : '🚀 สร้าง Batch + เบิกวัตถุดิบ'}
+                  </button>
+                ) : (
+                  <div className="text-center py-3 text-xs text-slate-500">
+                    ต้องรับวัตถุดิบเพิ่มก่อนจึงจะสร้าง Batch ได้
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="card text-center py-12 text-slate-500">
@@ -382,17 +417,8 @@ export default function RecipePage() {
         </div>
       </div>
 
-      {/* Modals */}
-      {showCreate && (
-        <RecipeModal onClose={() => setShowCreate(false)} onSuccess={refresh} />
-      )}
-      {editing && (
-        <RecipeModal
-          recipe={editing}
-          onClose={() => setEditing(null)}
-          onSuccess={refresh}
-        />
-      )}
+      {showCreate && <RecipeModal onClose={() => setShowCreate(false)} onSuccess={refresh} />}
+      {editing && <RecipeModal recipe={editing} onClose={() => setEditing(null)} onSuccess={refresh} />}
     </div>
   )
 }

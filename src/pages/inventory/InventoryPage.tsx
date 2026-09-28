@@ -12,7 +12,7 @@ interface StockLot {
   holdReason: string | null; poNo: string | null; supplierCode: string | null
 }
 interface StockTransaction {
-  id: string; lotNo: string; transactionType: string
+  id: string; rmNo: string; transactionType: string
   documentNo: string; quantity: string; unit: string
   fromLocation: string | null; toLocation: string | null
   performedBy: string; createdAt: string
@@ -47,6 +47,7 @@ function LotDetailModal({ lot, onClose, onSuccess }: {
   lot: StockLot; onClose: () => void; onSuccess: () => void
 }) {
   const [editing, setEditing] = useState(false)
+  const [showBarcode, setShowBarcode] = useState(false)
   const [form, setForm] = useState({
     materialName: lot.materialName,
     materialCode: lot.materialCode,
@@ -57,22 +58,42 @@ function LotDetailModal({ lot, onClose, onSuccess }: {
   })
   const [error, setError] = useState('')
 
-  // mutation สำหรับ edit ข้อมูล
   const mutation = useMutation({
     mutationFn: () => api.patch(
-      `/api/v1/inventory/lots/${(lot.rmNo)}`, form
+      `/api/v1/inventory/lots/${lot.rmNo}`, form
     ),
     onSuccess: () => { onSuccess(); setEditing(false) },
     onError: (err: any) => setError(err.response?.data?.message || 'เกิดข้อผิดพลาด'),
   })
 
-  // cancel lot แยกออกมา
   const handleCancel = () => {
     if (!confirm(`ยืนยันยกเลิก Lot ${lot.rmNo}?\nจะถูก mark เป็น EXPIRED และซ่อนจาก list`)) return
-    api.patch(`/api/v1/inventory/lots/${(lot.rmNo)}`, { status: 'EXPIRED' })
+    api.patch(`/api/v1/inventory/lots/${lot.rmNo}`, { status: 'EXPIRED' })
       .then(() => onSuccess())
       .catch((err: any) => alert(err.response?.data?.message || 'เกิดข้อผิดพลาด'))
   }
+
+  // barcode screen
+  if (showBarcode) return (
+    <div className="card w-full max-w-md space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold text-white">พิมพ์ Barcode</h3>
+        <button onClick={() => setShowBarcode(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
+      </div>
+      <BarcodeGenerator
+        value={lot.rmNo}
+        label={lot.materialName}
+        sublabel={`${lot.materialCode} | ${lot.location} | ${Number(lot.remainingQty).toFixed(3)} ${lot.unit}`}
+        onDownload={() => setShowBarcode(false)}
+      />
+      {lot.status === 'CONSUMED' && (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-3 text-xs text-yellow-400">
+          ⚠ Lot นี้ถูกใช้ไปแล้วในการผลิต ใช้ barcode นี้แปะถุงที่เข้า batch
+        </div>
+      )}
+      <button onClick={() => setShowBarcode(false)} className="btn-ghost w-full text-sm">กลับ</button>
+    </div>
+  )
 
   return (
     <div className="card w-full max-w-md space-y-4">
@@ -80,12 +101,20 @@ function LotDetailModal({ lot, onClose, onSuccess }: {
         <h3 className="text-lg font-bold text-white">รายละเอียด Lot</h3>
         <div className="flex items-center gap-2">
           {!editing && (
-            <button
-              onClick={() => setEditing(true)}
-              className="text-xs text-sky-400 hover:text-sky-300 border border-sky-500/30 px-3 py-1 rounded-lg"
-            >
-              แก้ไข
-            </button>
+            <>
+              <button
+                onClick={() => setShowBarcode(true)}
+                className="text-xs text-amber-400 hover:text-amber-300 border border-amber-500/30 px-3 py-1 rounded-lg"
+              >
+                🏷 Barcode
+              </button>
+              <button
+                onClick={() => setEditing(true)}
+                className="text-xs text-sky-400 hover:text-sky-300 border border-sky-500/30 px-3 py-1 rounded-lg"
+              >
+                แก้ไข
+              </button>
+            </>
           )}
           <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
         </div>
@@ -156,6 +185,16 @@ function LotDetailModal({ lot, onClose, onSuccess }: {
             </div>
           ))}
 
+          {lot.status === 'CONSUMED' && (
+            <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 space-y-2">
+              <p className="text-slate-300 text-xs font-medium">📦 Lot นี้ถูกเบิกเข้า Batch แล้ว</p>
+              <p className="text-slate-500 text-xs">กด Barcode เพื่อพิมพ์ label แปะถุงวัตถุดิบที่ส่งเข้าสายการผลิต</p>
+              <button onClick={() => setShowBarcode(true)} className="btn-primary w-full text-xs">
+                🏷 พิมพ์ Barcode สำหรับถุงที่เข้า Batch
+              </button>
+            </div>
+          )}
+
           {lot.status === 'HOLD' && lot.holdReason && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
               <p className="text-red-400 text-xs font-medium">เหตุผลที่กักกัน</p>
@@ -188,15 +227,14 @@ function LotDetailModal({ lot, onClose, onSuccess }: {
 function CreateROModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const { user } = useAuthStore()
   const [form, setForm] = useState({
-    lotNo: '', materialCode: '', materialName: '',
+    materialCode: '', materialName: '',
     quantity: '', unit: 'kg', location: 'Zone-RM-01',
     receivedBy: user?.id ?? '', expiryDate: '',
     poNo: '', supplierCode: '',
   })
   const [error, setError] = useState('')
-  const [createdLotNo, setCreatedLotNo] = useState('')
+  const [createdRmNo, setCreatedRmNo] = useState('')
 
-  // ดึง PO ที่ RECEIVED
   const { data: pos = [] } = useQuery<PoDocument[]>({
     queryKey: ['pos-received'],
     queryFn: () => api.get('/api/v1/purchase/po').then(r =>
@@ -219,9 +257,6 @@ function CreateROModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
 
   const mutation = useMutation({
     mutationFn: () => {
-      // validate ก่อน
-      if (!form.lotNo.trim())
-        throw new Error('กรุณาระบุ รหัสสินค้า')
       if (!form.materialCode.trim())
         throw new Error('กรุณาระบุรหัสวัตถุดิบ')
       if (!form.materialName.trim())
@@ -233,13 +268,17 @@ function CreateROModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
         ...form, quantity: Number(form.quantity),
       })
     },
-    onSuccess: () => { onSuccess(); setCreatedLotNo(form.lotNo) },
+    onSuccess: (res) => {
+      onSuccess()
+      // backend ส่ง rmNo กลับมาใน response
+      setCreatedRmNo(res.data?.rmNo ?? res.data?.lot?.rmNo ?? '')
+    },
     onError: (err: any) => setError(
       err.message || err.response?.data?.message || 'เกิดข้อผิดพลาด'
     ),
   })
 
-  if (createdLotNo) return (
+  if (createdRmNo) return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="card w-full max-w-md space-y-4">
         <div className="text-center space-y-1">
@@ -252,7 +291,7 @@ function CreateROModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
           <p className="text-xs text-slate-400">Download barcode แล้วปริ้นท์แปะถุงวัตถุดิบ</p>
         </div>
         <BarcodeGenerator
-          value={createdLotNo}
+          value={createdRmNo}
           label={form.materialName}
           sublabel={`${form.materialCode} | ${form.location} | ${Number(form.quantity).toFixed(3)} ${form.unit}`}
           onDownload={onClose}
@@ -348,7 +387,7 @@ function CreateFGTModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
   )
 
   const selectLot = (lot: StockLot) => {
-    setForm(f => ({ ...f, lotNo: lot.rmNo, unit: lot.unit, fromLocation: lot.location }))
+    setForm(f => ({ ...f, rmNo: lot.rmNo, unit: lot.unit, fromLocation: lot.location }))
     setLotSearch(lot.rmNo)
     setShowDrop(false)
   }
@@ -369,7 +408,7 @@ function CreateFGTModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
           <label className="block text-xs font-medium text-slate-400 mb-1">Lot Number</label>
           <input className="input" placeholder="พิมพ์เพื่อค้นหา Lot..."
             value={lotSearch}
-            onChange={e => { setLotSearch(e.target.value); setForm(f => ({ ...f, lotNo: '' })); setShowDrop(true) }}
+            onChange={e => { setLotSearch(e.target.value); setForm(f => ({ ...f, rmNo: '' })); setShowDrop(true) }}
             onFocus={() => setShowDrop(true)} />
           {showDrop && lotSearch && filteredLots.length > 0 && (
             <div className="absolute z-10 w-full mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
@@ -437,14 +476,37 @@ function CreateFGTModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
 }
 
 
+// ── Quick Barcode Modal ───────────────────────────────
+function QuickBarcodeModal({ lot, onClose }: { lot: StockLot; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="card w-full max-w-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-white">🏷 Barcode</h3>
+            <p className="text-xs text-slate-400 font-mono mt-0.5">{lot.rmNo}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
+        </div>
+        <BarcodeGenerator
+          value={lot.rmNo}
+          label={lot.materialName}
+          sublabel={`${lot.materialCode} | ${lot.location} | ${Number(lot.remainingQty).toFixed(3)} ${lot.unit}`}
+          onDownload={onClose}
+        />
+        <button onClick={onClose} className="btn-ghost w-full text-sm">ปิดโดยไม่ download</button>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────
 export default function InventoryPage() {
   const qc = useQueryClient()
   const [showRO, setShowRO] = useState(false)
-  // const [showRM, setShowRM] = useState(false)
   const [showFGT, setShowFGT] = useState(false)
-  // const [showSO, setShowSO] = useState(false)
   const [selected, setSelected] = useState<StockLot | null>(null)
+  const [barcodeTarget, setBarcodeTarget] = useState<StockLot | null>(null)
   const [txFilter, setTxFilter] = useState('ALL')
   const [lotFilter, setLotFilter] = useState('')
   const [showExpired, setShowExpired] = useState(false)
@@ -457,7 +519,7 @@ export default function InventoryPage() {
         : '/api/v1/inventory/lots'
     ).then(r => r.data),
     refetchInterval: 10000,
-    staleTime: 0,        // ← force refetch ทุกครั้ง
+    staleTime: 0,
   })
 
   const { data: txData, isLoading: txLoading } = useQuery<{ data: StockTransaction[]; total: number }>({
@@ -500,7 +562,7 @@ export default function InventoryPage() {
         <p className="text-sm text-slate-400 mt-1">ควบคุม 4 งานหลัก: รับเข้า (Received), เบิกเข้าผลิต (Requisition), โอนย้ายพิกัด (Transfer) และ จัดส่งคำสั่งซื้อ (Sale Order)</p>
       </div>
 
-      {/* 4 Action Cards */}
+      {/* Action Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {ACTION_CARDS.map(card => (
           <div key={card.no} className="card space-y-3">
@@ -566,7 +628,23 @@ export default function InventoryPage() {
               ) : filteredLots.map(lot => (
                 <tr key={lot.id} onClick={() => setSelected(lot)}
                   className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors cursor-pointer">
-                  <td className="px-4 py-3 font-mono text-xs text-sky-400">{lot.rmNo}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-sky-400">{lot.rmNo}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); setBarcodeTarget(lot) }}
+                        title="พิมพ์ Barcode"
+                        className="text-slate-600 hover:text-amber-400 transition-colors"
+                      >
+                        <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+                          <rect x="2" y="4" width="2" height="16"/><rect x="5" y="4" width="1" height="16"/>
+                          <rect x="7" y="4" width="2" height="16"/><rect x="11" y="4" width="1" height="16"/>
+                          <rect x="13" y="4" width="3" height="16"/><rect x="17" y="4" width="1" height="16"/>
+                          <rect x="19" y="4" width="1" height="16"/><rect x="21" y="4" width="1" height="16"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <p className="text-white font-medium">{lot.materialName}</p>
                     <p className="text-xs text-slate-500">{lot.materialCode}</p>
@@ -600,7 +678,6 @@ export default function InventoryPage() {
             <h3 className="text-sm font-bold text-slate-300">สมุดบัญชีเคลื่อนไหวคลังสินค้า (WAREHOUSE TRANSACTION LEDGER)</h3>
             <p className="text-xs text-slate-500 mt-0.5">รวม {txData?.total ?? 0} รายการ</p>
           </div>
-          {/* Filter */}
           <div className="flex gap-2">
             {['ALL', 'RO', 'RM', 'FGT', 'SO_DISPATCH', 'RETURN_WHRM'].map(t => (
               <button key={t} onClick={() => setTxFilter(t)}
@@ -652,7 +729,7 @@ export default function InventoryPage() {
                       {tx.documentNo}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="font-mono text-xs text-sky-400">{tx.lotNo}</p>
+                      <p className="font-mono text-xs text-sky-400">{tx.rmNo}</p>
                       <p className="text-xs text-slate-500">{tx.lot.materialName}</p>
                     </td>
                     <td className="px-4 py-3 font-mono font-bold text-sm">
@@ -691,9 +768,8 @@ export default function InventoryPage() {
 
       {/* Modals */}
       {showRO && <CreateROModal onClose={() => setShowRO(false)} onSuccess={refresh} />}
-      {/* {showRM && <CreateRMModal onClose={() => setShowRM(false)} onSuccess={refresh} />} */}
       {showFGT && <CreateFGTModal onClose={() => setShowFGT(false)} onSuccess={refresh} />}
-      {/* {showSO && <DispatchSOModal onClose={() => setShowSO(false)} onSuccess={refresh} />} */}
+      {barcodeTarget && <QuickBarcodeModal lot={barcodeTarget} onClose={() => setBarcodeTarget(null)} />}
     </div>
   )
 }
